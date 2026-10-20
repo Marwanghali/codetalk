@@ -1,0 +1,187 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeChat</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1020;color:#f1f5ff;font:16px Arial,sans-serif;min-height:100vh;display:grid;place-items:center;padding:18px}
+.app{width:min(760px,100%);background:#131c31;border:1px solid #30405f;border-radius:20px;padding:24px;box-shadow:0 20px 60px #0006}
+h1{margin-top:0;color:#91aaff}p{color:#aab7d1}
+input,button{font:inherit;border-radius:10px;padding:12px;border:1px solid #354665}
+input{width:100%;background:#0a1223;color:white;margin:7px 0 12px}
+button{cursor:pointer;background:#91aaff;color:#0b1020;font-weight:bold}
+.secondary{background:#202d49;color:white}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1}
+.panel{background:#0d1527;border:1px solid #283957;border-radius:12px;padding:16px;margin:12px 0}
+#chat{display:none}#messages{height:260px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.message{background:#202d49;padding:10px;border-radius:10px;overflow-wrap:anywhere}
+small{color:#aab7d1}.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>💬 CodeChat</h1>
+<p>Your account. Your code. Your conversations.</p>
+
+<section id="auth">
+<div id="register">
+<h2>Create account</h2>
+<input id="username" maxlength="32" placeholder="Choose a username">
+<button onclick="register()">Create my account</button>
+</div>
+
+<div id="newAccount" class="panel hidden">
+<h3>Your account code</h3>
+<p id="createdCode"></p>
+<button class="secondary" onclick="copyCode()">Copy code</button>
+<button onclick="continueLogin()">Continue</button>
+<p><small>Save this code. This demo has no account recovery.</small></p>
+</div>
+
+<hr style="border-color:#30405f;margin:24px 0">
+<h2>Log in</h2>
+<input id="loginCode" placeholder="Enter your account code">
+<button onclick="login()">Log in</button>
+<p id="status"></p>
+</section>
+
+<section id="chat">
+<div class="row">
+<h2 id="welcome" style="flex:2"></h2>
+<button class="secondary" onclick="logout()">Log out</button>
+</div>
+<div class="panel">
+<div id="messages"></div>
+</div>
+<form id="messageForm" class="row">
+<input id="message" placeholder="Write a message..." maxlength="2000" required>
+<button type="submit">Send</button>
+</form>
+<p><small>Local demo: messages are visible only in this browser.</small></p>
+</section>
+</div>
+
+<script>
+const USERS="codechat_users";
+let activeCode=null;
+let pendingCode=null;
+
+function users(){
+ try{return JSON.parse(localStorage.getItem(USERS)||"{}")}
+ catch{return {}}
+}
+function saveUsers(data){
+ localStorage.setItem(USERS,JSON.stringify(data));
+}
+function generateCode(){
+ const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+ const bytes=crypto.getRandomValues(new Uint8Array(12));
+ let s="";
+ bytes.forEach((b,i)=>{
+  if(i===4||i===8)s+="-";
+  s+=chars[b%chars.length];
+ });
+ return s;
+}
+function register(){
+ const name=document.getElementById("username").value.trim();
+ if(!name){status("Enter a username.");return}
+ const all=users();
+ let code;
+ do{code=generateCode()}while(all[code]);
+ all[code]={name:name};
+ saveUsers(all);
+ pendingCode=code;
+ document.getElementById("createdCode").textContent=code;
+ document.getElementById("newAccount").classList.remove("hidden");
+ document.getElementById("register").classList.add("hidden");
+ status("Account created. Save your code!");
+}
+function status(message){
+ document.getElementById("status").textContent=message;
+}
+async function copyCode(){
+ try{
+  await navigator.clipboard.writeText(pendingCode);
+  status("Code copied!");
+ }catch{
+  status("Please select and copy your code manually.");
+ }
+}
+function continueLogin(){
+ if(pendingCode)openChat(pendingCode);
+}
+function login(){
+ const code=document.getElementById("loginCode").value.trim().toUpperCase();
+ if(!users()[code]){
+  status("Account not found in this browser.");
+  return;
+ }
+ openChat(code);
+}
+function openChat(code){
+ const account=users()[code];
+ if(!account)return;
+ activeCode=code;
+ localStorage.setItem("codechat_session",code);
+ document.getElementById("auth").style.display="none";
+ document.getElementById("chat").style.display="block";
+ document.getElementById("welcome").textContent="Hello, "+account.name+"!";
+ renderMessages();
+}
+function logout(){
+ activeCode=null;
+ localStorage.removeItem("codechat_session");
+ document.getElementById("auth").style.display="block";
+ document.getElementById("chat").style.display="none";
+ document.getElementById("register").classList.remove("hidden");
+ document.getElementById("newAccount").classList.add("hidden");
+}
+function renderMessages(){
+ const box=document.getElementById("messages");
+ box.replaceChildren();
+ const key="codechat_messages_"+activeCode;
+ let list=[];
+ try{list=JSON.parse(localStorage.getItem(key)||"[]")}catch{}
+ if(!list.length){
+  box.textContent="No messages yet. Send your first message!";
+  return;
+ }
+ list.forEach(item=>{
+  const div=document.createElement("div");
+  div.className="message";
+  const heading=document.createElement("strong");
+  heading.textContent=item.name;
+  const text=document.createElement("div");
+  text.textContent=item.text;
+  const time=document.createElement("small");
+  time.textContent=new Date(item.time).toLocaleString();
+  div.append(heading,document.createElement("br"),text,time);
+  box.appendChild(div);
+ });
+ box.scrollTop=box.scrollHeight;
+}
+document.getElementById("messageForm").addEventListener("submit",e=>{
+ e.preventDefault();
+ if(!activeCode)return;
+ const field=document.getElementById("message");
+ const text=field.value.trim();
+ if(!text)return;
+ const key="codechat_messages_"+activeCode;
+ let list=[];
+ try{list=JSON.parse(localStorage.getItem(key)||"[]")}catch{}
+ list.push({name:users()[activeCode].name,text,time:Date.now()});
+ localStorage.setItem(key,JSON.stringify(list));
+ field.value="";
+ renderMessages();
+});
+try{
+ const code=localStorage.getItem("codechat_session");
+ if(code&&users()[code])openChat(code);
+}catch{}
+</script>
+</body>
+</html>
